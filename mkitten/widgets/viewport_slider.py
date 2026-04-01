@@ -69,13 +69,19 @@ class ViewportSlider(QtWidgets.QWidget):
         container_layout.setContentsMargins(8, 4, 8, 4)
         container_layout.setSpacing(6)
 
-        # Label
+        # Label (acts as drag handle)
         if label:
             lbl = QtWidgets.QLabel(label)
             lbl.setStyleSheet(
-                "color: #ccc; font-size: 11px; background: transparent; border: none;"
+                "color: #ccc; font-size: 11px; background: transparent;"
+                "border: none; cursor: move;"
             )
+            lbl.setCursor(QtCore.Qt.OpenHandCursor)
+            lbl.installEventFilter(self)
             container_layout.addWidget(lbl)
+
+        self._drag_start_pos = None
+        self._drag_start_widget_pos = None
 
         # Slider
         self._slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -136,6 +142,29 @@ class ViewportSlider(QtWidgets.QWidget):
         main_layout.addWidget(self._container)
 
         self.adjustSize()
+
+    def eventFilter(self, obj, event):
+        """Handle dragging from the label."""
+        if event.type() == QtCore.QEvent.MouseButtonPress:
+            if event.button() == QtCore.Qt.LeftButton:
+                self._drag_start_pos = event.globalPosition().toPoint()
+                self._drag_start_widget_pos = self.pos()
+                obj.setCursor(QtCore.Qt.ClosedHandCursor)
+                return True
+
+        elif event.type() == QtCore.QEvent.MouseMove:
+            if self._drag_start_pos is not None:
+                delta = event.globalPosition().toPoint() - self._drag_start_pos
+                self.move(self._drag_start_widget_pos + delta)
+                return True
+
+        elif event.type() == QtCore.QEvent.MouseButtonRelease:
+            if self._drag_start_pos is not None:
+                self._drag_start_pos = None
+                obj.setCursor(QtCore.Qt.OpenHandCursor)
+                return True
+
+        return False
 
     def _format_value(self, val):
         return f"{val:.0%}" if self._max_val == 1.0 else f"{val:.2f}"
