@@ -6,6 +6,7 @@ from mkitten import hotkeys
 from mkitten.ui.base_tab import BaseTab
 from mkitten.utils import skin, selection
 from mkitten.widgets.hotkey_tool_group import CollapsibleHotkeyToolGroup
+from mkitten.widgets.viewport_slider import ViewportSlider
 
 
 class AverageWeightsTool(CollapsibleHotkeyToolGroup):
@@ -55,19 +56,22 @@ class AverageWeightsTool(CollapsibleHotkeyToolGroup):
         self._falloff = {}
         self._original_weights = {}
         self._average_weights = {}
+        self._viewport_slider = None
 
-        # Register hotkey — fires capture selection
+        # Register hotkey — fires capture with viewport slider
         hotkeys.register(
             self.ACTION_ID,
             "Average Weights - Capture Selection",
             self.DEFAULT_KEY,
-            self._capture_selection,
+            self._hotkey_capture,
             group="Skinning",
         )
         self.refresh_hotkey()
 
-    def _capture_selection(self):
-        """Capture the current selection and compute the average weights."""
+    # -- Core logic (shared) ------------------------------------------------
+
+    def _do_capture(self):
+        """Capture selection and compute average. Returns True on success."""
         # Apply previous blend if we had one in progress
         if self._original_weights and self._average_weights and self._slider.value() > 0:
             blended = self._blend_weights(self._slider.value() / 100.0)
@@ -77,13 +81,13 @@ class AverageWeightsTool(CollapsibleHotkeyToolGroup):
         if not mesh or not falloff:
             self.set_status("No vertices selected", "error")
             self._reset_state()
-            return
+            return False
 
         skin_cluster = skin.get_skin_cluster(mesh)
         if not skin_cluster:
             self.set_status("No skin cluster found", "error")
             self._reset_state()
-            return
+            return False
 
         self._mesh = mesh
         self._skin_cluster = skin_cluster
@@ -101,14 +105,81 @@ class AverageWeightsTool(CollapsibleHotkeyToolGroup):
         self.set_status(
             f"{vert_count} vertices captured ({inf_count} influences)", "success"
         )
+        return True
 
-        # Apply at full strength and set slider to 100%
-        blended = self._blend_weights(1.0)
+    def _apply_blend(self, blend):
+        """Apply a blend value to the weights."""
+        if not self._original_weights or not self._average_weights:
+            return
+        blended = self._blend_weights(blend)
         skin.set_vertex_weights(self._skin_cluster, blended)
+
+    # -- UI button callback -------------------------------------------------
+
+    def _capture_selection(self):
+        """Called from the UI button — capture and apply at 100%."""
+        if not self._do_capture():
+            return
+
+        self._apply_blend(1.0)
         self._slider.blockSignals(True)
         self._slider.setValue(100)
         self._slider.blockSignals(False)
         self._slider_value_label.setText("100%")
+
+    # -- Hotkey callback (viewport slider) ----------------------------------
+
+    def _hotkey_capture(self):
+        """Called from hotkey — capture and show viewport slider."""
+        if not self._do_capture():
+            return
+
+        # Apply at 100% initially
+        self._apply_blend(1.0)
+        self._slider.blockSignals(True)
+        self._slider.setValue(100)
+        self._slider.blockSignals(False)
+        self._slider_value_label.setText("100%")
+
+        # Show viewport slider
+        self._viewport_slider = ViewportSlider(
+            label="Blend", min_val=0.0, max_val=1.0, default=1.0
+        )
+        self._viewport_slider.value_changed.connect(self._on_viewport_slider_changed)
+        self._viewport_slider.applied.connect(self._on_viewport_slider_applied)
+        self._viewport_slider.cancelled.connect(self._on_viewport_slider_cancelled)
+        self._viewport_slider.show_at_cursor()
+
+    def _on_viewport_slider_changed(self, value):
+        """Viewport slider moved — update weights and sync UI slider."""
+        self._apply_blend(value)
+        self._slider.blockSignals(True)
+        self._slider.setValue(int(value * 100))
+        self._slider.blockSignals(False)
+        self._slider_value_label.setText(f"{int(value * 100)}%")
+
+    def _on_viewport_slider_applied(self, value):
+        """Viewport slider applied — bake current weights."""
+        self._apply_blend(value)
+        self._slider.blockSignals(True)
+        self._slider.setValue(int(value * 100))
+        self._slider.blockSignals(False)
+        self._slider_value_label.setText(f"{int(value * 100)}%")
+        self.set_status(f"Applied at {int(value * 100)}%", "success")
+        self._viewport_slider = None
+
+    def _on_viewport_slider_cancelled(self):
+        """Viewport slider cancelled — revert to original weights."""
+        if self._original_weights:
+            skin.set_vertex_weights(self._skin_cluster, self._original_weights)
+        self._slider.blockSignals(True)
+        self._slider.setValue(0)
+        self._slider.blockSignals(False)
+        self._slider_value_label.setText("0%")
+        self.set_status("Cancelled", "info")
+        self._viewport_slider = None
+
+    # -- Shared helpers -----------------------------------------------------
 
     def _compute_average(self, vertex_weights, falloff):
         accumulator = {}

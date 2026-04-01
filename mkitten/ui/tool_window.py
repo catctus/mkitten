@@ -143,6 +143,8 @@ class ToolWindow(QtWidgets.QWidget):
         self._tabs[index].on_activated()
 
     def closeEvent(self, event):
-        """Clean up hotkeys when the window closes."""
+        """Clean up hotkeys and viewport sliders when the window closes."""
+        from mkitten.widgets.viewport_slider import close_all as close_all_sliders
+        close_all_sliders()
         hotkeys.shutdown()
         super().closeEvent(event)
