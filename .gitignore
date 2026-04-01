@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Maya
+*.swatches
+*.mb~
+*.ma~
+*.log
+*.pyc
+
+# Maya workspace files
+workspace.mel
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Virtual environments
+venv/
+.env/
